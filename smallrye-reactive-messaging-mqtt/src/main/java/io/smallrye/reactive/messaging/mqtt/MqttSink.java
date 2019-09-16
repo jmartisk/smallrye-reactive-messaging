@@ -5,6 +5,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.microprofile.config.Config;
+import org.eclipse.microprofile.metrics.Counter;
+import org.eclipse.microprofile.metrics.MetricRegistry;
+import org.eclipse.microprofile.metrics.Tag;
 import org.eclipse.microprofile.reactive.messaging.Message;
 import org.eclipse.microprofile.reactive.streams.operators.ReactiveStreams;
 import org.eclipse.microprofile.reactive.streams.operators.SubscriberBuilder;
@@ -12,6 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import io.netty.handler.codec.mqtt.MqttQoS;
+import io.smallrye.metrics.MetricRegistries;
 import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -33,6 +37,10 @@ public class MqttSink {
 
     private final SubscriberBuilder<? extends Message<?>, Void> sink;
     private final AtomicBoolean connected = new AtomicBoolean();
+
+    // MP Metrics
+    private final Counter sentMessages;
+    private final Counter failedToSend;
 
     public MqttSink(Vertx vertx, Config config) {
         MqttClientOptions options = new MqttClientOptions();
@@ -65,6 +73,12 @@ public class MqttSink {
         topic = getTopicOrNull(config);
         client = MqttClient.create(vertx, options);
         qos = config.getOptionalValue("qos", Integer.class).orElse(0);
+        String channelName = config.getValue("channel-name", String.class);
+
+        // TODO register appropriate metrics
+        MetricRegistry metricRegistry = MetricRegistries.get(MetricRegistry.Type.VENDOR);
+        sentMessages = metricRegistry.counter("messaging.sentMessages", new Tag("channel", channelName));
+        failedToSend = metricRegistry.counter("messaging.failedToSend", new Tag("channel", channelName));
 
         sink = ReactiveStreams.<Message<?>> builder()
                 .flatMapCompletionStage(msg -> {
@@ -106,8 +120,12 @@ public class MqttSink {
 
                     client.publish(actualTopictoBeUsed, convert(msg.getPayload()), qos, false, isRetain, res -> {
                         if (res.failed()) {
+                            // TODO: here we sent a message but it failed
                             done.completeExceptionally(res.cause());
                         } else {
+                            // TODO: here we sent a message successfully
+                            System.out.println("SENT MESSAGE: SUCCESS");
+                            sentMessages.inc();
                             done.complete(res.result());
                         }
                     });

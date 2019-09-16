@@ -5,6 +5,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.microprofile.config.Config;
+import org.eclipse.microprofile.metrics.Counter;
+import org.eclipse.microprofile.metrics.MetricRegistry;
+import org.eclipse.microprofile.metrics.Tag;
 import org.eclipse.microprofile.reactive.streams.operators.PublisherBuilder;
 import org.eclipse.microprofile.reactive.streams.operators.ReactiveStreams;
 import org.slf4j.Logger;
@@ -12,6 +15,7 @@ import org.slf4j.LoggerFactory;
 
 import io.reactivex.BackpressureStrategy;
 import io.reactivex.Observable;
+import io.smallrye.metrics.MetricRegistries;
 import io.vertx.mqtt.MqttClientOptions;
 import io.vertx.reactivex.core.Vertx;
 import io.vertx.reactivex.mqtt.MqttClient;
@@ -21,6 +25,9 @@ public class MqttSource {
     private final Logger LOGGER = LoggerFactory.getLogger(MqttSource.class);
     private final PublisherBuilder<MqttMessage<?>> source;
     private AtomicBoolean subscribed = new AtomicBoolean();
+
+    // metrics
+    private final Counter receivedMessages;
 
     public MqttSource(Vertx vertx, Config config) {
         MqttClientOptions options = new MqttClientOptions();
@@ -59,14 +66,20 @@ public class MqttSource {
         int qos = config.getOptionalValue("qos", Integer.class).orElse(0);
         boolean broadcast = config.getOptionalValue("broadcast", Boolean.class).orElse(false);
 
+        // TODO register appropriate metrics
+        MetricRegistry metricRegistry = MetricRegistries.get(MetricRegistry.Type.VENDOR);
+        String channelName = config.getValue("channel-name", String.class);
+        receivedMessages = metricRegistry.counter("messaging.receivedMessages",
+                new Tag("channel", channelName));
+
         this.source = ReactiveStreams.fromPublisher(
                 client.rxConnect(port, host, server)
                         .flatMapObservable(a -> Observable.<MqttMessage<?>> create(emitter -> {
                             client.publishHandler(message -> {
+                                receivedMessages.inc();
                                 emitter.onNext(new ReceivingMqttMessage(message));
                             });
                             client.subscribe(topic, qos, done -> {
-                                System.out.println("Subscribing ...");
                                 if (done.failed()) {
                                     // Report on the flow
                                     emitter.onError(done.cause());

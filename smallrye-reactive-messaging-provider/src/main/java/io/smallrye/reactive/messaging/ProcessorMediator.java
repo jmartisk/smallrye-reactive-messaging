@@ -6,6 +6,8 @@ import java.util.concurrent.CompletionStage;
 import java.util.function.Function;
 
 import org.apache.commons.lang3.ClassUtils;
+import org.eclipse.microprofile.metrics.MetricRegistry;
+import org.eclipse.microprofile.metrics.Tag;
 import org.eclipse.microprofile.reactive.messaging.Acknowledgment;
 import org.eclipse.microprofile.reactive.messaging.Message;
 import org.eclipse.microprofile.reactive.streams.operators.ProcessorBuilder;
@@ -13,6 +15,8 @@ import org.eclipse.microprofile.reactive.streams.operators.PublisherBuilder;
 import org.eclipse.microprofile.reactive.streams.operators.ReactiveStreams;
 import org.reactivestreams.Processor;
 import org.reactivestreams.Publisher;
+
+import io.smallrye.metrics.MetricRegistries;
 
 public class ProcessorMediator extends AbstractMediator {
 
@@ -232,6 +236,8 @@ public class ProcessorMediator extends AbstractMediator {
             this.processor = ReactiveStreams.<Message> builder()
                     .flatMapCompletionStage(managePreProcessingAck())
                     .map(input -> {
+                        MetricRegistries.get(MetricRegistry.Type.VENDOR).counter("messaging.sentMessages",
+                                new Tag("channel", configuration.getOutgoing())).inc();
                         Object result = invoke(input.getPayload());
                         if (configuration.getAcknowledgment() == Acknowledgment.Strategy.POST_PROCESSING) {
                             return Message.of(result, () -> input.ack());

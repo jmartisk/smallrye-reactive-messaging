@@ -309,6 +309,7 @@ public class AmqpConnector implements IncomingConnectorFactory, OutgoingConnecto
 
     @PreDestroy
     public synchronized void close() {
+        System.out.println("------ CLOSING");
         if (client != null) {
             client.close();
         }
